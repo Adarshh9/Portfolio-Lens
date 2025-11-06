@@ -18,21 +18,31 @@ class JudgeScore(BaseModel):
     citations_used: List[str]
 
 class ExtendedJudgeScore(BaseModel):
-    grounding_score: int
-    consistency_score: int
-    depth_score: int
-    revision_required: bool
-    feedback: List[str]
-    citations_used: List[str]
-    specificity_score: int
-    average_score: int
-    reject: bool
-    strengths: List[str]
+    grounding_score: int = 0
+    consistency_score: int = 0
+    depth_score: int = 0
+    specificity_score: int = 0
+    average_score: float = 0.0
+    revision_required: bool = True
+    reject: bool = False
+    feedback: List[str] = Field(default_factory=list)
+    strengths: List[str] = Field(default_factory=list)
+    citations_used: List[str] = Field(default_factory=list)
+
+    class Config:
+        arbitrary_types_allowed = True  # allows helper methods
+
+    # methods preserved
+    def should_revise(self) -> bool:
+        return self.revision_required and not self.reject
+
+    def should_reject(self) -> bool:
+        return self.reject or self.average_score < 4
 
 class ChatResponse(BaseModel):
     response: str
     mode: str
-    judge_score: Optional[JudgeScore] = None
+    judge_score: Optional[ExtendedJudgeScore] = None
     sources: List[str] = []
 
 class IngestRequest(BaseModel):

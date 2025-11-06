@@ -25,9 +25,11 @@ export default function MessageBubble({ message }: Props) {
         {message.judgeScore && !isUser && (
           <div className="mt-3 pt-3 border-t border-slate-600">
             <div className="text-xs opacity-75 space-y-1">
-              <div>Grounding: {message.judgeScore.grounding_score}/5</div>
-              <div>Consistency: {message.judgeScore.consistency_score}/5</div>
-              <div>Depth: {message.judgeScore.depth_score}/5</div>
+              <div>Grounding: {message.judgeScore.grounding_score}/10</div>
+              <div>Consistency: {message.judgeScore.consistency_score}/10</div>
+              <div>Depth: {message.judgeScore.depth_score}/10</div>
+              <div>Specificity: {message.judgeScore.specificity_score}/10</div>
+              <div>Average: {message.judgeScore.average_score}/10</div>
             </div>
           </div>
         )}

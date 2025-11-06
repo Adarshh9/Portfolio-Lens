@@ -8,23 +8,79 @@ import JudgeScorePanel from './JudgeScorePanel';
 import { sendChatMessage } from '@/lib/api';
 import type { Message, InteractionMode, JudgeScore } from '@/lib/types';
 
+const STORAGE_KEY = 'portfolio_chat_history';
+const MODE_STORAGE_KEY = 'portfolio_chat_mode';
+
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<InteractionMode>('ama');
   const [isLoading, setIsLoading] = useState(false);
   const [latestJudgeScore, setLatestJudgeScore] = useState<JudgeScore | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
+  // Load from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedMessages = localStorage.getItem(STORAGE_KEY);
+      const savedMode = localStorage.getItem(MODE_STORAGE_KEY);
+      
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages);
+        setMessages(parsed);
+        console.log(`✓ Loaded ${parsed.length} messages from history`);
+      }
+      
+      if (savedMode) {
+        setMode(savedMode as InteractionMode);
+        console.log(`✓ Loaded mode: ${savedMode}`);
+      }
+    } catch (err) {
+      console.error('Error loading from localStorage:', err);
+    }
+  }, []);
+  
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    } catch (err) {
+      console.error('Error saving messages to localStorage:', err);
+    }
+  }, [messages]);
+  
+  // Save mode to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, mode);
+    } catch (err) {
+      console.error('Error saving mode to localStorage:', err);
+    }
+  }, [mode]);
+  
+  // Auto-scroll to latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+  
+  const handleClearHistory = () => {
+    if (confirm('Clear all chat history? This cannot be undone.')) {
+      setMessages([]);
+      setLatestJudgeScore(null);
+      localStorage.removeItem(STORAGE_KEY);
+      console.log('✓ Chat history cleared');
+    }
+  };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!input.trim() || isLoading) return;
     
+    setError(null);
+    
+    // Add user message
     const userMessage: Message = {
       id: nanoid(),
       role: 'user',
@@ -58,13 +114,14 @@ export default function ChatInterface() {
         setLatestJudgeScore(response.judge_score);
       }
       
-    } catch (error) {
-      console.error('Chat error:', error);
+    } catch (err) {
+      console.error('Chat error:', err);
+      setError('Failed to get response. Please try again.');
       
       const errorMessage: Message = {
         id: nanoid(),
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
+        content: '❌ Sorry, I encountered an error. Please try again.',
         timestamp: new Date()
       };
       
@@ -81,9 +138,17 @@ export default function ChatInterface() {
         {/* Header */}
         <div className="bg-slate-800/80 backdrop-blur border-b border-slate-700 p-4">
           <div className="max-w-4xl mx-auto">
-            <h1 className="text-2xl font-bold text-white mb-2">
-              Portfolio Assistant
-            </h1>
+            <div className="flex justify-between items-center mb-3">
+              <h1 className="text-2xl font-bold text-white">
+                Portfolio Assistant
+              </h1>
+              <button
+                onClick={handleClearHistory}
+                className="px-3 py-1 text-xs bg-red-900/50 hover:bg-red-800/50 text-red-200 rounded transition"
+              >
+                Clear History
+              </button>
+            </div>
             <ModeSelector currentMode={mode} onModeChange={setMode} />
           </div>
         </div>
@@ -96,6 +161,7 @@ export default function ChatInterface() {
                 <div className="text-slate-400 mb-4">
                   <h2 className="text-xl font-semibold mb-2">Welcome!</h2>
                   <p>Ask me about my projects, experience, or technical decisions.</p>
+                  <p className="text-xs mt-2 opacity-75">💾 Your chat history is saved automatically</p>
                 </div>
               </div>
             )}
@@ -113,6 +179,12 @@ export default function ChatInterface() {
                     <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {error && (
+              <div className="bg-red-900/50 border border-red-700 text-red-200 rounded-lg px-4 py-3">
+                {error}
               </div>
             )}
             
