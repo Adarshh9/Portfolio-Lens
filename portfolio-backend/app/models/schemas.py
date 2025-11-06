@@ -6,7 +6,7 @@ from datetime import datetime
 
 class ChatRequest(BaseModel):
     message: str
-    mode: Optional[str] = "ama"
+    mode: Optional[str] = None
     session_id: Optional[str] = None
 
 class JudgeScore(BaseModel):
@@ -71,6 +71,10 @@ class ModeDetectionResult(BaseModel):
 class RetrievedChunk(BaseModel):
     id: str
     content: str
-    source: str
-    project_type: str
-    similarity: float
+    source: Optional[str] = "unknown"
+    embedding: Optional[List[float]] = Field(default_factory=list)
+    similarity: Optional[float] = 0.0
+    
+    class Config:
+        # Allow creating from dict
+        from_attributes = True
