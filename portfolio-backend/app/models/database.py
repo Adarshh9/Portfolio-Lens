@@ -3,7 +3,7 @@ from app.config import settings
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
-import uuid
+import uuid as uuid_lib
 
 
 logger = logging.getLogger(__name__)
@@ -254,49 +254,11 @@ class SupabaseClient:
             logger.error(f"Error getting mode distribution: {e}")
             return {}
 
-    async def get_conversation_history(self, session_id: str, limit: int = 10) -> List[Dict]:
-        """Get conversation history"""
+    async def create_session(self, user_id: Optional[str] = None) -> str:
+        """Create new conversation session with proper UUID"""
         try:
-            response = self.client.table("messages")\
-                .select("role, content")\
-                .eq("session_id", session_id)\
-                .order("created_at", desc=False)\
-                .limit(limit)\
-                .execute()
-            
-            history = [
-                {"role": item.get("role"), "content": item.get("content")}
-                for item in response.data
-            ]
-            
-            logger.info(f"✓ Loaded {len(history)} messages from session {session_id}")
-            return history
-            
-        except Exception as e:
-            logger.error(f"Error getting conversation history: {e}")
-            return []
-
-    async def save_message(self, session_id: str, role: str, content: str):
-        """Save message to conversation history"""
-        try:
-            response = self.client.table("messages").insert({
-                "session_id": session_id,
-                "role": role,
-                "content": content,
-                "created_at": datetime.now().isoformat()
-            }).execute()
-            
-            logger.info(f"✓ Saved {role} message to session {session_id}")
-            return response.data
-            
-        except Exception as e:
-            logger.error(f"Error saving message: {e}")
-            return None
-
-    async def create_session(self, user_id: Optional[str] = None) -> Optional[str]:
-        """Create new conversation session"""
-        try:
-            session_id = str(uuid.uuid4())
+            # Generate proper UUID
+            session_id = str(uuid_lib.uuid4())
             
             response = self.client.table("chat_sessions").insert({
                 "id": session_id,
@@ -309,7 +271,68 @@ class SupabaseClient:
             
         except Exception as e:
             logger.error(f"Error creating session: {e}")
-            return None
+            return str(uuid_lib.uuid4())  # Return UUID even if insert fails
+
+    async def get_conversation_history(self, session_id: str, limit: int = 10) -> List[Dict]:
+        """Get conversation history - WITH PROPER UUID HANDLING"""
+        if not session_id:
+            logger.warning("No session_id provided")
+            return []
+        
+        try:
+            # Validate session_id is UUID format
+            try:
+                uuid_lib.UUID(session_id)
+            except ValueError:
+                logger.warning(f"Invalid session ID format (not UUID): {session_id}")
+                return []
+            
+            response = self.client.table("messages")\
+                .select("role, content")\
+                .eq("session_id", session_id)\
+                .order("created_at", desc=False)\
+                .limit(limit)\
+                .execute()
+            
+            history = [
+                {"role": item.get("role"), "content": item.get("content")}
+                for item in response.data
+            ]
+            
+            logger.info(f"✓ Loaded {len(history)} messages from session {session_id[:8]}...")
+            return history
+            
+        except Exception as e:
+            logger.error(f"Error getting conversation history: {e}")
+            return []
+
+    async def save_message(self, session_id: str, role: str, content: str) -> bool:
+        """Save message - WITH UUID VALIDATION"""
+        if not session_id or not role or not content:
+            logger.warning(f"Missing parameters: session_id={bool(session_id)}, role={role}, content_len={len(content)}")
+            return False
+        
+        try:
+            # Validate UUID
+            try:
+                uuid_lib.UUID(session_id)
+            except ValueError:
+                logger.error(f"Invalid session_id (not UUID): {session_id}")
+                return False
+            
+            response = self.client.table("messages").insert({
+                "session_id": session_id,
+                "role": role,
+                "content": content,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            
+            logger.info(f"✓ Saved {role} message to session {session_id[:8]}...")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving message: {e}")
+            return False
 
 # Global instance
 db = SupabaseClient()

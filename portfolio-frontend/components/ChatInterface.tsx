@@ -19,6 +19,7 @@ export default function ChatInterface() {
   const [latestJudgeScore, setLatestJudgeScore] = useState<JudgeScore | null>(null);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   
   // Load from localStorage on mount
   useEffect(() => {
@@ -63,7 +64,38 @@ export default function ChatInterface() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-  
+
+  // In useEffect for session management:
+  useEffect(() => {
+    // Try to load or create session
+    const savedSessionId = localStorage.getItem('portfolio_session_id');
+    
+    if (savedSessionId && isValidUUID(savedSessionId)) {
+      setSessionId(savedSessionId);
+      console.log(`✓ Resumed session: ${savedSessionId}`);
+    } else {
+      // Generate proper UUID v4
+      const newSessionId = generateUUID();
+      localStorage.setItem('portfolio_session_id', newSessionId);
+      setSessionId(newSessionId);
+      console.log(`✓ Created new session: ${newSessionId}`);
+    }
+  }, []);
+
+  // Add UUID utility functions:
+  function generateUUID(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  function isValidUUID(uuid: string): boolean {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(uuid);
+  }
+
   const handleClearHistory = () => {
     if (confirm('Clear all chat history? This cannot be undone.')) {
       setMessages([]);
@@ -96,8 +128,14 @@ export default function ChatInterface() {
     try {
       const response = await sendChatMessage({
         message: input,
-        mode
+        mode,
+        session_id: sessionId
       });
+      
+      if (response.session_id) {
+        setSessionId(response.session_id);
+        localStorage.setItem('portfolio_session_id', response.session_id);
+      }
       
       const assistantMessage: Message = {
         id: nanoid(),

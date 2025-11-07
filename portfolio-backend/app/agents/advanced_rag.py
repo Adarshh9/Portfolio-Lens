@@ -18,23 +18,49 @@ class AdvancedRAG:
     
     def _convert_to_chunks(self, results: List[Union[dict, RetrievedChunk]]) -> List[RetrievedChunk]:
         """Convert database results to RetrievedChunk objects"""
-        chunks = []
-        for item in results:
-            if isinstance(item, RetrievedChunk):
-                chunks.append(item)
-            elif isinstance(item, dict):
-                # Convert dict to RetrievedChunk
-                chunk = RetrievedChunk(
-                    id=item.get('id', ''),
-                    content=item.get('content', ''),
-                    source=item.get('source', 'unknown'),
-                    embedding=item.get('embedding', []),
-                    similarity=item.get('similarity', 0.0)
-                )
-                chunks.append(chunk)
-            else:
-                logger.warning(f"Unknown chunk type: {type(item)}")
+        if not results:
+            logger.warning("No results to convert")
+            return []
         
+        chunks = []
+        
+        for idx, item in enumerate(results):
+            try:
+                if isinstance(item, RetrievedChunk):
+                    chunks.append(item)
+                elif isinstance(item, dict):
+                    # Safe extraction with fallbacks
+                    item_id = item.get('id', f'unknown_{idx}')
+                    content = item.get('content', '')
+                    
+                    # Extract source safely
+                    metadata = item.get('metadata', {})
+                    if isinstance(metadata, dict):
+                        source = metadata.get('title', metadata.get('source', 'unknown'))
+                    else:
+                        source = 'unknown'
+                    
+                    embedding = item.get('embedding', [])
+                    similarity = item.get('similarity', 0.0)
+                    
+                    # Create chunk
+                    chunk = RetrievedChunk(
+                        id=item_id,
+                        content=content,
+                        source=source,
+                        embedding=embedding,
+                        similarity=similarity
+                    )
+                    chunks.append(chunk)
+                    logger.debug(f"✓ Converted chunk {idx}: {source[:30]}")
+                else:
+                    logger.warning(f"Unknown chunk type at {idx}: {type(item)}")
+            
+            except Exception as e:
+                logger.error(f"Failed to convert chunk {idx}: {e}")
+                continue
+        
+        logger.info(f"✓ Converted {len(chunks)}/{len(results)} results to chunks")
         return chunks
     
     def _deduplicate_chunks(self, chunks: List[RetrievedChunk], threshold: float = 0.85) -> List[RetrievedChunk]:
@@ -195,10 +221,17 @@ class AdvancedRAG:
             logger.info("  Level 1: Initial retrieval...")
             initial_results = await db.vector_search(
                 query_embedding=embedding_model.embed_query(query),
-                match_threshold=0.6,
+                match_threshold=0.4,
                 match_count=top_k * 3  # Get 3x what we need
             )
-            
+            if not initial_results:
+                logger.warning("  ⚠️  No chunks found at threshold 0.4, trying lower threshold...")
+                # Fallback: Get top-k regardless of threshold
+                initial_results = await db.vector_search(
+                    query_embedding=embedding_model.embed_query(query),
+                    match_threshold=0.0,  # Get anything
+                    match_count=top_k * 5
+                )
             if not initial_results:
                 logger.warning("  No chunks found in initial retrieval")
                 return []
