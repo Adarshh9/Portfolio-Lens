@@ -12,7 +12,8 @@ from app.agents.advanced_rag import advanced_rag
 from app.agents.response_agent import generate_response_with_history
 from app.agents.judge_agent import judge_response, should_revise, should_reject
 from app.models.database import db
-from app.embeddings.nomic import embedding_model
+from app.agents.context_filter import smart_context_decision
+import uuid as uuid_lib
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -67,25 +68,87 @@ async def chat(request: ChatRequest):
             except Exception as e:
                 logger.warning(f"Could not load conversation history: {e}")
         
-        # Step 4: CRITICAL - Determine if this is a follow-up
-        is_followup = len(conversation_history) >= 2
-        followup_project = None
+        # # Step 4: CRITICAL - Determine if this is a follow-up
+        # is_followup = len(conversation_history) >= 2
+        # followup_project = None
         
-        if is_followup:
-            # Extract project from last assistant message
+        # if is_followup:
+        #     # Extract project from last assistant message
+        #     for msg in reversed(conversation_history):
+        #         if msg.get("role") == "assistant":
+        #             content = msg.get("content", "")
+                    
+        #             # Extract [source: project_name] from response
+        #             import re
+        #             sources = re.findall(r'\[source:\s*([^\]]+)\]', content)
+
+        #             if sources and len(sources) > 0:
+        #                 followup_project = sources[0].strip()
+        #                 logger.info(f"🔄 Follow-up detected! Previous project: {followup_project}")
+        #                 break
+        
+        # # Step 5: RAG retrieval
+        # logger.info("📚 Starting advanced RAG retrieval...")
+        # try:
+        #     chunks = await advanced_rag.retrieve_advanced(request.message, top_k=5)
+        # except Exception as e:
+        #     logger.error(f"RAG retrieval failed: {e}")
+        #     chunks = []
+        
+        # if not chunks:
+        #     logger.warning("⚠️ No relevant chunks found")
+        #     return ChatResponse(
+        #         response="I don't have enough information in my portfolio to answer that question. Try asking about:\n- TaxoCapsNet\n- Finsaathi\n- Nutri-AI\n- ProdML\n- Doc-QA",
+        #         mode=mode,
+        #         judge_score=None,
+        #         sources=[]
+            # )
+        
+        # # Step 6: FILTER chunks if this is a follow-up
+        # if followup_project:
+        #     logger.info(f"🔍 Filtering {len(chunks)} chunks to project: {followup_project}")
+            
+        #     filtered_chunks = [
+        #         chunk for chunk in chunks
+        #         if chunk.source and chunk.source.lower() == followup_project.lower()
+        #     ]
+            
+        #     if filtered_chunks:
+        #         logger.info(f"✓ Filtered to {len(filtered_chunks)} chunks from {followup_project}")
+        #         chunks = filtered_chunks
+        #     else:
+        #         logger.warning(f"No chunks found for {followup_project}, using all")
+        
+        # logger.info(f"✅ Retrieved {len(chunks)} chunks")
+
+        # Step 4: SEMANTIC - Smart context decision
+        followup_project = None
+
+        # Extract previous project from conversation
+        if len(conversation_history) >= 2:
             for msg in reversed(conversation_history):
                 if msg.get("role") == "assistant":
                     content = msg.get("content", "")
                     
-                    # Extract [source: project_name] from response
                     import re
                     sources = re.findall(r'\[source:\s*([^\]]+)\]', content)
-
-                    if sources and len(sources) > 0:
+                    
+                    if sources:
                         followup_project = sources[0].strip()
-                        logger.info(f"🔄 Follow-up detected! Previous project: {followup_project}")
+                        logger.info(f"📚 Previous project detected: {followup_project}")
                         break
-        
+
+        # Use semantic approach to decide if we should filter
+        context_decision = await smart_context_decision(
+            current_query=request.message,
+            conversation_history=conversation_history,
+            previous_project=followup_project,
+            use_llm=True,
+            use_embeddings=True
+        )
+
+        logger.info(f"🧠 Context Decision: {context_decision['reasoning']}")
+
         # Step 5: RAG retrieval
         logger.info("📚 Starting advanced RAG retrieval...")
         try:
@@ -93,7 +156,7 @@ async def chat(request: ChatRequest):
         except Exception as e:
             logger.error(f"RAG retrieval failed: {e}")
             chunks = []
-        
+
         if not chunks:
             logger.warning("⚠️ No relevant chunks found")
             return ChatResponse(
@@ -102,23 +165,25 @@ async def chat(request: ChatRequest):
                 judge_score=None,
                 sources=[]
             )
-        
-        # Step 6: FILTER chunks if this is a follow-up
-        if followup_project:
-            logger.info(f"🔍 Filtering {len(chunks)} chunks to project: {followup_project}")
-            
+
+        # Step 6: CONDITIONALLY filter chunks based on semantic decision
+        if context_decision['should_filter'] and context_decision['target_project']:
+            target = context_decision['target_project'].lower()
             filtered_chunks = [
-                chunk for chunk in chunks
-                if chunk.source and chunk.source.lower() == followup_project.lower()
+                c for c in chunks 
+                if c.source and c.source.lower() == target
             ]
             
             if filtered_chunks:
-                logger.info(f"✓ Filtered to {len(filtered_chunks)} chunks from {followup_project}")
                 chunks = filtered_chunks
+                logger.info(f"✂️ Filtered to {len(chunks)} chunks for {target}")
             else:
-                logger.warning(f"No chunks found for {followup_project}, using all")
-        
+                logger.info(f"⚠️ No chunks for {target}, using all {len(chunks)} chunks")
+        else:
+            logger.info(f"🌐 Using all {len(chunks)} chunks (context: {context_decision['reasoning'][:40]}...)")
+
         logger.info(f"✅ Retrieved {len(chunks)} chunks")
+
         
         # Step 7: Generate response
         logger.info("🤖 Generating response...")
@@ -161,7 +226,8 @@ async def chat(request: ChatRequest):
                         mode,
                         chunks,
                         revision_feedback=judge_score.feedback,
-                        conversation_history=conversation_history
+                        conversation_history=conversation_history,
+                        stream=False
                     )
                     
                     judge_score = await judge_response(response_text, chunks, mode)

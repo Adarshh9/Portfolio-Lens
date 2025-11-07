@@ -24,26 +24,26 @@ def _format_conversation_history(conversation_history: List[Dict]) -> str:
     
     return formatted
 
-def _extract_follow_up_project(conversation_history: List[Dict]) -> Optional[str]:
-    """Extract which project the user was just discussing"""
-    if not conversation_history or len(conversation_history) < 2:
-        return None
+# def _extract_follow_up_project(conversation_history: List[Dict]) -> Optional[str]:
+#     """Extract which project the user was just discussing"""
+#     if not conversation_history or len(conversation_history) < 2:
+#         return None
     
-    # Get last assistant response (should have sources)
-    for msg in reversed(conversation_history):
-        if msg.get("role") == "assistant":
-            content = msg.get("content", "")
+#     # Get last assistant response (should have sources)
+#     for msg in reversed(conversation_history):
+#         if msg.get("role") == "assistant":
+#             content = msg.get("content", "")
             
-            # Extract source from [source: project_name]
-            import re
-            sources = re.findall(r'\[source:\s*([^\]]+)\]', content)
+#             # Extract source from [source: project_name]
+#             import re
+#             sources = re.findall(r'\[source:\s*([^\]]+)\]', content)
             
-            if sources:
-                project = sources[0].strip()
-                logger.info(f"📌 Detected project context: {project}")
-                return project
+#             if sources:
+#                 project = sources[0].strip()
+#                 logger.info(f"📌 Detected project context: {project}")
+#                 return project
     
-    return None
+#     return None
 
 async def generate_response_with_history(
     query: str,
@@ -57,24 +57,24 @@ async def generate_response_with_history(
     
     system_prompt = SYSTEM_PROMPTS.get(mode, SYSTEM_PROMPTS.get("ama", ""))
     
-    # CRITICAL: If this is follow-up, filter chunks to ONLY relevant project
-    detected_project = _extract_follow_up_project(conversation_history or [])
+    # # CRITICAL: If this is follow-up, filter chunks to ONLY relevant project
+    # detected_project = _extract_follow_up_project(conversation_history or [])
     
-    if detected_project and conversation_history and len(conversation_history) >= 2:
-        # This is likely a follow-up question
-        logger.info(f"🔄 Follow-up detected - Filtering to {detected_project} only")
+    # if detected_project and conversation_history and len(conversation_history) >= 2:
+    #     # This is likely a follow-up question
+    #     logger.info(f"🔄 Follow-up detected - Filtering to {detected_project} only")
         
-        # Filter chunks to only the detected project
-        filtered_chunks = [
-            chunk for chunk in context_chunks 
-            if chunk.source and chunk.source.lower() == detected_project.lower()
-        ]
+    #     # Filter chunks to only the detected project
+    #     filtered_chunks = [
+    #         chunk for chunk in context_chunks 
+    #         if chunk.source and chunk.source.lower() == detected_project.lower()
+    #     ]
         
-        if filtered_chunks:
-            logger.info(f"Filtered {len(context_chunks)} → {len(filtered_chunks)} chunks")
-            context_chunks = filtered_chunks
-        else:
-            logger.warning(f"No chunks found for {detected_project}, using all")
+    #     if filtered_chunks:
+    #         logger.info(f"Filtered {len(context_chunks)} → {len(filtered_chunks)} chunks")
+    #         context_chunks = filtered_chunks
+    #     else:
+    #         logger.warning(f"No chunks found for {detected_project}, using all")
     
     # Format context
     context_str = ""
@@ -98,10 +98,7 @@ async def generate_response_with_history(
 
 {conversation_context}
 
-Current Question: {query}
-
----
-If this is a follow-up question, focus ONLY on the project previously discussed and answer in that context."""
+Current Question: {query}"""
     
     if revision_feedback:
         user_prompt += f"\n\n**Improvement Notes:**\n"
